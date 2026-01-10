@@ -14,7 +14,7 @@ class Violation:
     st.title("ANPR & Helmet Violation Detection (Groq Powered)")
 
     # Initialize Groq - Replace with your actual key
-    # client = Groq(api_key="")
+    client = ""
 
     @st.cache_resource
     def load_yolo():

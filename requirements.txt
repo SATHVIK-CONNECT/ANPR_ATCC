@@ -9,3 +9,4 @@ seaborn
 matplotlib
 torch
 groq
+lap

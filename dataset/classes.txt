@@ -1,0 +1,4 @@
+helmet
+no helmet
+bike
+number plate

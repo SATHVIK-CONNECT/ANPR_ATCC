@@ -1,0 +1,7 @@
+path: E:/ATCC/dataset
+train: train/images
+val: val/images
+
+nc: 7
+
+names: ["helmet", "no helmet", "bike", "number plate"]

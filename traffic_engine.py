@@ -4,19 +4,19 @@ from collections import defaultdict, deque
 from ultralytics import YOLO
 from violation_engine import ViolationEngine
 
-
 class TrafficLightManager:
-    def __init__(self, traffic_model_path, violation_model_path):
-        # We load both, but we will use them selectively
+    # --- FIX: Accept plate_model_path ---
+    def __init__(self, traffic_model_path, violation_model_path, plate_model_path):
         self.model = YOLO(traffic_model_path)
-        self.violation_engine = ViolationEngine(violation_model_path, conf=0.25)
+        
+        # --- FIX: Pass plate_model_path to ViolationEngine ---
+        self.violation_engine = ViolationEngine(violation_model_path, plate_model_path, conf=0.25)
         
         self.track_history = defaultdict(lambda: deque(maxlen=40))
         self.vehicle_directions = {} 
         self.verified_moving = set()
         self.unique_vehicle_classes = {}
         
-        # Stats
         self.violation_stats = {"No Helmet": 0, "Mobile Usage": 0, "Triple Riding": 0, "Total Violations": 0}
         self.recent_violations = deque(maxlen=8) 
         
@@ -39,7 +39,6 @@ class TrafficLightManager:
         self.recent_violations.clear()
         self.violation_engine.reset()
 
-    # ... [Keep get_detailed_direction and is_vehicle_stopped same as before] ...
     def get_detailed_direction(self, track_id, current_x, current_y):
         if track_id not in self.track_history or len(self.track_history[track_id]) < 10: return None
         prev_x, prev_y = self.track_history[track_id][0]
@@ -54,22 +53,16 @@ class TrafficLightManager:
         end_x, end_y = history[-1]
         return np.sqrt((end_x - start_x)**2 + (end_y - start_y)**2) < 10 
 
-    # --- UPDATED PROCESS FRAME ---
-    def process_frame(self, frame, frame_count, mode="Analysis"):
+    def process_frame(self, frame, frame_count, mode="Analysis", is_video=True):
         
-        # ============================================================
-        # MODE 1: TRAFFIC ANALYSIS (Model 1 Only)
-        # ============================================================
         if mode == "Analysis":
             results = self.model.track(frame, persist=True, verbose=False, conf=0.1, tracker="botsort.yaml")
-            
             raw_moving_density = defaultdict(float)
             raw_stopped_density = defaultdict(float)
             vehicle_counts = defaultdict(int)
             annotated_frame = frame.copy()
             
             if results[0].boxes.id is not None:
-                # ... [Existing Logic for Traffic Tracking] ...
                 boxes = results[0].boxes.xywh.cpu()
                 track_ids = results[0].boxes.id.int().cpu().tolist()
                 clss = results[0].boxes.cls.int().cpu().tolist()
@@ -80,7 +73,6 @@ class TrafficLightManager:
                     class_name = names[cls]
                     weight = self.weights.get(class_name, 1.0)
                     
-                    # Draw Traffic Boxes
                     rx1, ry1 = int(x - w/2), int(y - h/2)
                     rx2, ry2 = int(x + w/2), int(y + h/2)
                     cv2.rectangle(annotated_frame, (rx1, ry1), (rx2, ry2), (0, 255, 0), 2)
@@ -104,7 +96,6 @@ class TrafficLightManager:
                         else: raw_moving_density[final_direction] += weight
                         cv2.putText(annotated_frame, final_direction, (int(x), int(y)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
-            # Signal Logic
             main_lane_moving = {d: 0.0 for d in self.main_lanes}
             main_lane_stopped = {d: 0.0 for d in self.main_lanes}
             for direct, val in raw_moving_density.items():
@@ -114,7 +105,6 @@ class TrafficLightManager:
                 for main in self.main_lanes:
                     if main in direct: main_lane_stopped[main] += val
             
-            # Timer Logic
             time_step = 0.033
             for lane in self.main_lanes:
                 if main_lane_stopped[lane] > 0.5 and main_lane_stopped[lane] >= main_lane_moving[lane]:
@@ -129,14 +119,9 @@ class TrafficLightManager:
             
             return annotated_frame, main_lane_moving, active_lane, green_time, None, self.lane_wait_timers, vehicle_counts, len(self.unique_vehicle_classes), self.violation_stats, self.recent_violations
 
-        # ============================================================
-        # MODE 2: VIOLATION DETECTION (Model 2 Only)
-        # ============================================================
         elif mode == "Violation":
-            # Run the NEW Full Frame detection (Fixes blurriness)
-            annotated_frame, new_evidence = self.violation_engine.detect_violations_full_frame(frame, frame_count)
+            annotated_frame, new_evidence = self.violation_engine.detect_violations_full_frame(frame, frame_count, is_video=is_video)
             
-            # Update Stats
             if new_evidence:
                 self.violation_stats["Total Violations"] += len(new_evidence)
                 for ev in new_evidence:
@@ -144,6 +129,4 @@ class TrafficLightManager:
                         self.violation_stats[v] = self.violation_stats.get(v, 0) + 1
                     self.recent_violations.append(ev)
             
-            # Return empty/dummy values for traffic stats since we aren't calculating them
             return annotated_frame, {}, "N/A", 0, None, {}, {}, 0, self.violation_stats, self.recent_violations
-                    

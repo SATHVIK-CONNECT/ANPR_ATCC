@@ -17,7 +17,7 @@ class ViolationEngine:
         
         # --- GROQ SETUP ---
         # YOUR NEW API KEY (Verified from your request)
-        self.groq_client = ""
+        self.groq_client = Groq(api_key="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") 
         
         # --- UPDATED MODEL ID (CRITICAL FIX) ---
         # Old 'llama-3.2-90b' models are deprecated as of April 2025.
